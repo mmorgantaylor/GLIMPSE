@@ -24,9 +24,6 @@
  ******************************************************************************/
 
 #include <io/genotype_reader.h>
-#include <io/retry_io.h>
-#include <thread>
-#include <chrono>
 
 std::map<std::string, int> mapPloidy = {
 		{"1",1},
@@ -292,35 +289,26 @@ void genotype_reader::scanGenotypes(bcf_srs_t * sr) {
 }
 void genotype_reader::readTarGenotypes(std::string fmain, int nthreads)
 {
-	//Retries are not implemented in hfile_libcurl (used when streaming from a cloud
-	//location), so we retry transient read failures of each streaming pass here. The
-	//scan only accumulates into the local vec_pos_tar (reset by clearing it at the start
-	//of scanTarGenotypes) and reads the sample names/header, and the parse overwrites the
-	//genotype set by site index, so each retry restarts the pass from a clean state.
-	vrb.bullet("Reading target GLs from [" + fmain + "] via retry-enabled streaming path (binary reference panel)");
-	const int n_retry = 3;
-	const std::chrono::seconds base_delay(1);
-
+	//The target GL file is read in two streaming passes: scan (accumulates the per-site
+	//list and reads the sample names/header) then parse (fills the genotype set by site
+	//index). Each pass returns the synced-reader errnum so a failed open or a mid-stream
+	//read error is surfaced immediately rather than silently treated as end-of-file.
 	std::vector<variant*> vec_pos_tar;
 
 	vrb.wait("  * VCF/BCF scanning");
 	tac.clock();
-	retry_with_backoff("scanning target GLs [" + fmain + "]", n_retry, base_delay, [&]() -> attempt_result {
-		const int err = scanTarGenotypes(fmain, nthreads, vec_pos_tar);
-		return { err == 0, false, err ? std::string(bcf_sr_strerror(err)) : std::string() };
-	});
+	const int scan_err = scanTarGenotypes(fmain, nthreads, vec_pos_tar);
+	if (scan_err) vrb.error("Error reading target GLs [" + fmain + "] while scanning: " + std::string(bcf_sr_strerror(scan_err)) + ". The file may be missing, malformed, truncated, or (if cloud-streamed) the read may have failed.");
 
-	//Sample names + ploidy are now known from the (retried) scan pass; set_ploidy_tar
-	//allocates the genotype set, so it must run exactly once, after a successful scan and
-	//before the parse pass writes into it.
+	//Sample names + ploidy are known from the scan pass; set_ploidy_tar allocates the
+	//genotype set, so it must run exactly once, after the scan and before the parse pass
+	//writes into it.
 	set_ploidy_tar();
 
 	vrb.wait("  * VCF/BCF parsing");
 	tac.clock();
-	retry_with_backoff("parsing target GLs [" + fmain + "]", n_retry, base_delay, [&]() -> attempt_result {
-		const int err = parseTarGenotypes(fmain, nthreads, vec_pos_tar);
-		return { err == 0, false, err ? std::string(bcf_sr_strerror(err)) : std::string() };
-	});
+	const int parse_err = parseTarGenotypes(fmain, nthreads, vec_pos_tar);
+	if (parse_err) vrb.error("Error reading target GLs [" + fmain + "] while parsing: " + std::string(bcf_sr_strerror(parse_err)) + ". The file may be missing, malformed, truncated, or (if cloud-streamed) the read may have failed.");
 }
 
 int genotype_reader::scanTarGenotypes(std::string fmain, int nthreads, std::vector<variant*>& vec_pos_tar)
