@@ -39,6 +39,12 @@ variant_map::~variant_map() {
 	map_pos.clear();
 }
 
+void variant_map::reset() {
+	for (int s = 0 ; s < vec_pos.size() ; s++) delete vec_pos[s];
+	vec_pos.clear();
+	map_pos.clear();
+}
+
 std::size_t variant_map::size() const {
 	return vec_pos.size();
 }

@@ -192,12 +192,14 @@ bool caller::read_binary_reference_panel(const std::string& reference_filename, 
 		return false;
 	}
 
-	//(2) Deserialize the archive. boost overwrites H/V in place, so a failed attempt
-	//here leaves them partially written; the next retry re-opens and overwrites again,
-	//restarting from a clean archive. A truncated/incomplete localization surfaces as a
-	//retryable input_stream_error (EOF mid-stream); a bad/wrong archive header
+	//(2) Deserialize the archive. boost overwrites H/V in place. On a retry, V (which owns
+	//its variant* via vec_pos) would otherwise have the previous attempt's panel silently
+	//replaced and leaked, so free it first; H's members are value-containers that boost
+	//reassigns cleanly, so they need no explicit reset. A truncated/incomplete localization
+	//surfaces as a retryable input_stream_error (EOF mid-stream); a bad/wrong archive header
 	//(invalid_signature) or a GLIMPSE/boost version mismatch are non_retryable, since the
 	//bytes already read are wrong and retrying will never help.
+	V.reset();
 	try
 	{
 		boost::archive::binary_iarchive ia(ifs);

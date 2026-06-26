@@ -54,6 +54,10 @@ public :
 	//CONSTRUCTOR/DESTRUCTOR
 	variant_map();
 	~variant_map();
+	//Free the owned variant* and clear the containers, returning the map to its freshly
+	//constructed state. Used before re-deserializing into an existing variant_map (e.g. a
+	//retried binary reference panel read) so the previous attempt's variants are not leaked.
+	void reset();
 
 	//METHODS
 	std::size_t size() const;

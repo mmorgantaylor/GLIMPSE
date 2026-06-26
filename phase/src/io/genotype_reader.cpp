@@ -169,14 +169,20 @@ int genotype_reader::openTargetReader(bcf_srs_t *sr, std::string& file, int nthr
 
 	if (nthreads>1) bcf_sr_set_threads(sr, nthreads);
 
-	//A failed open/index load is the most common transient cloud-streaming failure; return
-	//a nonzero code so the caller can retry instead of aborting here. Capture errno right
-	//here (it carries the real cause, e.g. EPERM on a flaky GCS read) before bcf_sr_destroy
-	//or anything else can clobber it; bcf_sr_strerror often returns nothing for open_failed.
+	//Capture errno right here (it carries the real cause, e.g. EPERM on a flaky GCS read)
+	//before bcf_sr_destroy or anything else can clobber it; bcf_sr_strerror often returns
+	//nothing for open_failed.
 	errno = 0;
 	if(!(bcf_sr_add_reader (sr, file.c_str())))
 	{
-		err_out = "failed to open/index file: " + describe_sr_error(sr->errnum, errno);
+		//A missing/stale index is deterministic, not a transient cloud hiccup: retrying only
+		//delays the failure, so fail fast here (matching the pre-retry behaviour) with the
+		//specific, actionable message rather than returning the retryable SR_OPEN_FAILED.
+		if (sr->errnum == idx_load_failed)
+			vrb.error("Failed to load index of file [" + file + "]: " + describe_sr_error(sr->errnum, errno) + ". A missing or stale index (.csi/.tbi) is not a transient error; please (re)index the file.");
+		//A failed open is the most common transient cloud-streaming failure; return a nonzero
+		//code so the caller can retry instead of aborting here.
+		err_out = "failed to open file: " + describe_sr_error(sr->errnum, errno);
 		return SR_OPEN_FAILED;
 	}
 	return 0;
@@ -514,6 +520,9 @@ int genotype_reader::parseTarGenotypes(std::string fmain, int nthreads, const st
 	if (truncated)
 	{
 		err_out = "scan/parse site-count mismatch (scanned " + std::to_string(vec_pos_tar.size()) + ", parsed " + std::to_string(i_site) + "+); a streaming pass was likely truncated by a transient read error";
+		//If htslib also flagged the read, keep its detail rather than masking it behind the
+		//generic mismatch message.
+		if (err) err_out += " (htslib: " + describe_sr_error(err, saved_errno) + ")";
 		return SR_TRUNCATED;
 	}
 	if (err) err_out = describe_sr_error(err, saved_errno);
