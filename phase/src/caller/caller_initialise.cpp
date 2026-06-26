@@ -96,7 +96,7 @@ void caller::read_files_and_initialise() {
 			//attempt re-opens the file and boost overwrites H/V, so every retry restarts
 			//from a clean archive.
 			vrb.bullet("Localizing binary reference panel [" + reference_filename + "] via retry-enabled read");
-			retry_with_backoff("reading binary reference panel [" + reference_filename + "]", 3, std::chrono::seconds(1), [&]() -> attempt_result {
+			retry_with_backoff("reading binary reference panel [" + reference_filename + "]", 1, std::chrono::seconds(1), [&]() -> attempt_result {
 				std::string err_msg;
 				bool non_retryable = false;
 				const bool ok = read_binary_reference_panel(reference_filename, err_msg, non_retryable);
