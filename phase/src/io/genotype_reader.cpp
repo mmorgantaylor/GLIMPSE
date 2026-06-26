@@ -339,7 +339,7 @@ void genotype_reader::readTarGenotypes(std::string fmain, int nthreads)
 
 	vrb.wait("  * VCF/BCF scanning + parsing");
 	tac.clock();
-	retry_with_backoff("reading target GLs [" + fmain + "]", 3, std::chrono::seconds(1), [&]() -> attempt_result {
+	retry_with_backoff("reading target GLs [" + fmain + "]", 1, std::chrono::seconds(1), [&]() -> attempt_result {
 		std::string err;
 		const int scan_err = scanTarGenotypes(fmain, nthreads, vec_pos_tar, err);
 		if (scan_err) return { false, false, err };
